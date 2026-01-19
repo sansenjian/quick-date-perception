@@ -743,14 +743,139 @@ class DateTool(BaseTool):
             }
 
 
+# ==================== 注入内容构建 ====================
+
+async def build_injection_content() -> str:
+    """
+    构建完整的日期注入内容
+    
+    Returns:
+        格式化的注入内容，包含：
+        - 当前时间和时间段
+        - 三天日期信息（昨天、今天、明天）
+        - 农历信息（如果可用）
+        - 节气信息（如果可用）
+        - 智能提示
+    """
+    try:
+        now = datetime.now()
+        
+        # 1. 构建标题和当前时间
+        current_time_str = now.strftime("%Y年%m月%d日 %H:%M:%S")
+        time_period = classify_time_period(now.hour)
+        weekday = get_weekday_cn(now)
+        
+        lines = [
+            "=" * 50,
+            "📅 当前日期时间信息",
+            "=" * 50,
+            "",
+            f"⏰ 当前时间: {current_time_str}",
+            f"📆 星期: {weekday}",
+            f"🕐 时段: {time_period}",
+            ""
+        ]
+        
+        # 2. 三天日期信息
+        lines.append("📋 三天日期概览:")
+        lines.append("-" * 50)
+        
+        # 获取三天基础信息
+        raw_info = get_three_days_raw_info()
+        yesterday = now - timedelta(days=1)
+        tomorrow = now + timedelta(days=1)
+        
+        # 获取节假日信息
+        yesterday_holiday = await detect_holiday(yesterday)
+        today_holiday = await detect_holiday(now)
+        tomorrow_holiday = await detect_holiday(tomorrow)
+        
+        # 格式化三天信息
+        yesterday_info = raw_info["yesterday"]
+        yesterday_line = f"  昨天: {yesterday_info['date_short']} {yesterday_info['weekday']}"
+        if yesterday_holiday and yesterday_holiday != "工作日":
+            yesterday_line += f" 【{yesterday_holiday}】"
+        lines.append(yesterday_line)
+        
+        today_info = raw_info["today"]
+        today_line = f"  今天: {today_info['date_short']} {today_info['weekday']}"
+        if today_holiday and today_holiday != "工作日":
+            today_line += f" 【{today_holiday}】"
+        lines.append(today_line)
+        
+        tomorrow_info = raw_info["tomorrow"]
+        tomorrow_line = f"  明天: {tomorrow_info['date_short']} {tomorrow_info['weekday']}"
+        if tomorrow_holiday and tomorrow_holiday != "工作日":
+            tomorrow_line += f" 【{tomorrow_holiday}】"
+        lines.append(tomorrow_line)
+        
+        lines.append("")
+        
+        # 3. 农历信息
+        lunar_info = get_lunar_info(now)
+        if lunar_info:
+            lines.append("🏮 农历信息:")
+            lines.append("-" * 50)
+            lines.append(f"  {lunar_info}")
+            lines.append("")
+        
+        # 4. 节气信息
+        solar_term_info = get_solar_term_info(now)
+        if solar_term_info:
+            lines.append("🌸 节气信息:")
+            lines.append("-" * 50)
+            lines.append(f"  {solar_term_info}")
+            lines.append("")
+        
+        # 5. 智能提示
+        lines.append("💡 提示:")
+        lines.append("-" * 50)
+        
+        hints = []
+        
+        # 根据实际包含的信息生成提示
+        if lunar_info and solar_term_info:
+            hints.append("  • 以上包含公历、农历、节气等完整日期信息")
+        elif lunar_info:
+            hints.append("  • 以上包含公历和农历日期信息")
+        elif solar_term_info:
+            hints.append("  • 以上包含公历和节气信息")
+        else:
+            hints.append("  • 以上包含公历日期信息")
+        
+        hints.append("  • 你可以根据用户问题自然地引用这些信息")
+        hints.append("  • 如果用户询问日期、星期、节假日、农历、节气等，直接使用以上信息回答")
+        hints.append("  • 不需要调用搜索工具查询日期相关信息")
+        
+        lines.extend(hints)
+        lines.append("")
+        lines.append("=" * 50)
+        
+        return "\n" + "\n".join(lines) + "\n"
+    except Exception as e:
+        logger.error(f"[DatePerception] 构建注入内容失败: {e}")
+        # 降级方案：返回简单的日期信息
+        now = datetime.now()
+        simple_info = f"\n当前时间: {now.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        return simple_info
+
+
 # ==================== EventHandler 组件 ====================
 
 class DateInjectEventHandler(BaseEventHandler):
-    """日期信息注入事件处理器"""
+    """日期信息注入事件处理器
+    
+    在 LLM 调用前自动注入完整的日期信息到 prompt，包括：
+    - 当前时间和时间段
+    - 三天日期信息（昨天、今天、明天）
+    - 节假日状态
+    - 农历信息（如果 lunarcalendar 可用）
+    - 节气信息（如果 lunarcalendar 可用）
+    """
     
     event_type: EventType = EventType.POST_LLM
     handler_name: str = "date_inject_handler"
-    handler_description: str = "在 LLM 调用前自动注入日期信息到 prompt"
+    handler_description: str = "在 LLM 调用前自动注入完整的日期信息到 prompt"
     weight: int = 10
     intercept_message: bool = True
     
@@ -772,29 +897,23 @@ class DateInjectEventHandler(BaseEventHandler):
             if not hasattr(message, "llm_prompt") or not message.llm_prompt:
                 return True, True, "无 LLM prompt", None, None
             
-            # 获取日期信息
-            date_info = await get_three_days_info()
+            # 构建完整的注入内容
+            inject_content = await build_injection_content()
             
-            # 构建注入内容（优化格式，确保换行清晰）
-            inject_content = (
-                "\n\n"
-                "【日期信息】\n"
-                f"{date_info}\n"
-                "\n"
-                "提示：以上是当前日期信息，你可以根据需要在回复中自然地提及相关日期。"
-            )
-            
-            # 修改 prompt
+            # 修改 prompt（注入到末尾）
             message.modify_llm_prompt(
-                message.llm_prompt + inject_content,
+                message.llm_prompt + "\n" + inject_content,
                 suppress_warning=True
             )
             
-            logger.debug(f"[DatePerception] 已注入日期信息")
+            # 记录注入的内容（用于调试）
+            logger.info(f"[DatePerception] 已注入日期信息到 LLM prompt")
+            logger.debug(f"[DatePerception] 注入内容:\n{inject_content}")
             
             return True, True, "日期信息已注入", None, message
         except Exception as e:
             logger.error(f"[DatePerception] 日期注入失败: {e}")
+            logger.exception(f"[DatePerception] 异常详情: {e}")
             # 注入失败不阻止消息处理
             return True, False, f"注入失败: {str(e)}", None, message
 
