@@ -451,7 +451,8 @@ def get_solar_term_info(current_time: datetime) -> str:
         current_time: 当前时间
         
     Returns:
-        节气信息，如 "今日立春"、"临近春分"、"当前节气: 清明"
+        节气信息，如 "立春"、"大寒"
+        只在节气当天显示，其他日期返回空字符串
         lunarcalendar 不可用或失败时返回空字符串
     """
     if not LUNARCALENDAR_AVAILABLE:
@@ -462,32 +463,45 @@ def get_solar_term_info(current_time: datetime) -> str:
         year = current_time.year
         current_date = current_time.date()
         
-        # 查找最近的节气
-        closest_term = None
-        closest_days = 999
+        # 节气类名映射（lunarcalendar 使用拼音类名）
+        solar_term_classes = {
+            "小寒": solarterm.XiaoHan,
+            "大寒": solarterm.DaHan,
+            "立春": solarterm.LiChun,
+            "雨水": solarterm.YuShui,
+            "惊蛰": solarterm.JingZhe,
+            "春分": solarterm.ChunFen,
+            "清明": solarterm.QingMing,
+            "谷雨": solarterm.GuYu,
+            "立夏": solarterm.LiXia,
+            "小满": solarterm.XiaoMan,
+            "芒种": solarterm.MangZhong,
+            "夏至": solarterm.XiaZhi,
+            "小暑": solarterm.XiaoShu,
+            "大暑": solarterm.DaShu,
+            "立秋": solarterm.LiQiu,
+            "处暑": solarterm.ChuShu,
+            "白露": solarterm.BaiLu,
+            "秋分": solarterm.QiuFen,
+            "寒露": solarterm.HanLu,
+            "霜降": solarterm.ShuangJiang,
+            "立冬": solarterm.LiDong,
+            "小雪": solarterm.XiaoXue,
+            "大雪": solarterm.DaXue,
+            "冬至": solarterm.DongZhi,
+        }
         
-        for term_name in SOLAR_TERMS:
+        # 查找是否有节气在今天
+        for term_name, term_class in solar_term_classes.items():
             # 获取节气日期
-            term_date = solarterm.get_solar_term_date(year, term_name)
-            if term_date:
-                days_diff = (term_date - current_date).days
-                
-                if abs(days_diff) < abs(closest_days):
-                    closest_days = days_diff
-                    closest_term = term_name
+            term_date = term_class(year)
+            
+            # 只在节气当天显示
+            if term_date == current_date:
+                return term_name
         
-        if not closest_term:
-            return ""
-        
-        # 根据距离返回不同格式
-        if closest_days == 0:
-            return f"今日{closest_term}"
-        elif 0 < closest_days <= 2:
-            return f"临近{closest_term}"
-        elif -2 <= closest_days < 0:
-            return f"{closest_term}已过"
-        else:
-            return f"当前节气: {closest_term}"
+        # 如果今天不是节气，返回空字符串
+        return ""
     except Exception as e:
         logger.debug(f"[DatePerception] 节气计算失败: {e}")
         return ""
@@ -534,10 +548,12 @@ async def get_three_days_info() -> str:
     获取三天完整信息，格式化为字符串
     
     Returns:
-        格式化的三天日期信息，每行格式：
+        格式化的三天日期信息，包含农历和节气，格式：
         "昨天 | 1月1日 星期一【元旦】"
         "今天 | 1月2日 星期二"
         "明天 | 1月3日 星期三"
+        "农历甲辰年(龙年)正月初一"
+        "今日立春"
     """
     try:
         # 获取基础信息
@@ -575,6 +591,16 @@ async def get_three_days_info() -> str:
         if tomorrow_holiday and tomorrow_holiday != "工作日":
             tomorrow_line += f"【{tomorrow_holiday}】"
         lines.append(tomorrow_line)
+        
+        # 添加农历信息
+        lunar_info = get_lunar_info(now)
+        if lunar_info:
+            lines.append(lunar_info)
+        
+        # 添加节气信息
+        solar_term_info = get_solar_term_info(now)
+        if solar_term_info:
+            lines.append(solar_term_info)
         
         return "\n".join(lines)
     except Exception as e:
@@ -647,6 +673,9 @@ async def expand_with_llm(raw_info: str, llm_model: str = "replyer") -> str:
     """
     使用 LLM 将原始日期信息扩展为自然语言
     
+    注意：此函数仅在 DateCommand (/date 命令) 中使用，
+    不影响 DateTool 和 DateInjectEventHandler 的行为。
+    
     Args:
         raw_info: 原始格式化的日期信息
         llm_model: LLM 模型名称
@@ -700,7 +729,7 @@ class DateTool(BaseTool):
     """日期查询工具"""
     
     name: str = "get_date_info"
-    description: str = "获取昨天、今天、明天的日期、星期几和节假日信息"
+    description: str = "获取当前日期、星期、节假日、农历、节气等完整信息。包括昨天、今天、明天的详细日期信息，支持中国节假日识别、农历转换、二十四节气计算。适用于查询日期、星期几、是否节假日、农历日期、节气等问题。"
     available_for_llm: bool = True
     parameters: List = []  # 不需要参数
     
@@ -731,14 +760,118 @@ class DateTool(BaseTool):
             }
 
 
+# ==================== 注入内容构建 ====================
+
+async def build_injection_content() -> str:
+    """
+    构建完整的日期注入内容
+    
+    Returns:
+        格式化的注入内容，包含：
+        - 当前时间和时间段
+        - 三天日期信息（昨天、今天、明天）
+        - 农历信息（如果可用）
+        - 节气信息（如果可用）
+        - 智能提示
+    """
+    try:
+        now = datetime.now()
+        
+        # 1. 当前时间信息（简洁格式）
+        current_time_str = now.strftime("%Y-%m-%d %H:%M:%S")
+        time_period = classify_time_period(now.hour)
+        weekday = get_weekday_cn(now)
+        
+        lines = [
+            "",
+            "【当前日期时间】",
+            f"时间: {current_time_str} ({weekday}, {time_period})",
+            ""
+        ]
+        
+        # 2. 三天日期信息（包含每天的农历和节气）
+        lines.append("【三天日期】")
+        
+        # 获取三天基础信息
+        raw_info = get_three_days_raw_info()
+        yesterday = now - timedelta(days=1)
+        tomorrow = now + timedelta(days=1)
+        
+        # 获取节假日信息
+        yesterday_holiday = await detect_holiday(yesterday)
+        today_holiday = await detect_holiday(now)
+        tomorrow_holiday = await detect_holiday(tomorrow)
+        
+        # 获取每天的农历和节气信息
+        yesterday_lunar = get_lunar_info(yesterday)
+        today_lunar = get_lunar_info(now)
+        tomorrow_lunar = get_lunar_info(tomorrow)
+        
+        yesterday_solar_term = get_solar_term_info(yesterday)
+        today_solar_term = get_solar_term_info(now)
+        tomorrow_solar_term = get_solar_term_info(tomorrow)
+        
+        # 格式化三天信息（每天一行，包含农历和节气）
+        yesterday_info = raw_info["yesterday"]
+        yesterday_line = f"昨天: {yesterday_info['date_short']} {yesterday_info['weekday']}"
+        if yesterday_holiday and yesterday_holiday != "工作日":
+            yesterday_line += f" ({yesterday_holiday})"
+        if yesterday_lunar:
+            yesterday_line += f" | {yesterday_lunar}"
+        if yesterday_solar_term:
+            yesterday_line += f" | {yesterday_solar_term}"
+        lines.append(yesterday_line)
+        
+        today_info = raw_info["today"]
+        today_line = f"今天: {today_info['date_short']} {today_info['weekday']}"
+        if today_holiday and today_holiday != "工作日":
+            today_line += f" ({today_holiday})"
+        if today_lunar:
+            today_line += f" | {today_lunar}"
+        if today_solar_term:
+            today_line += f" | {today_solar_term}"
+        lines.append(today_line)
+        
+        tomorrow_info = raw_info["tomorrow"]
+        tomorrow_line = f"明天: {tomorrow_info['date_short']} {tomorrow_info['weekday']}"
+        if tomorrow_holiday and tomorrow_holiday != "工作日":
+            tomorrow_line += f" ({tomorrow_holiday})"
+        if tomorrow_lunar:
+            tomorrow_line += f" | {tomorrow_lunar}"
+        if tomorrow_solar_term:
+            tomorrow_line += f" | {tomorrow_solar_term}"
+        lines.append(tomorrow_line)
+        
+        # 4. 简洁提示
+        lines.append("")
+        lines.append("提示: 以上是完整的日期信息，如果可以用于回答用户关于日期、星期、节假日、农历、节气的问题，就无需调用工具搜索日期。")
+        lines.append("")
+        
+        return "\n".join(lines)
+    except Exception as e:
+        logger.error(f"[DatePerception] 构建注入内容失败: {e}")
+        # 降级方案：返回简单的日期信息
+        now = datetime.now()
+        simple_info = f"\n当前时间: {now.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        return simple_info
+
+
 # ==================== EventHandler 组件 ====================
 
 class DateInjectEventHandler(BaseEventHandler):
-    """日期信息注入事件处理器"""
+    """日期信息注入事件处理器
+    
+    在 LLM 调用前自动注入完整的日期信息到 prompt，包括：
+    - 当前时间和时间段
+    - 三天日期信息（昨天、今天、明天）
+    - 节假日状态
+    - 农历信息（如果 lunarcalendar 可用）
+    - 节气信息（如果 lunarcalendar 可用）
+    """
     
     event_type: EventType = EventType.POST_LLM
     handler_name: str = "date_inject_handler"
-    handler_description: str = "在 LLM 调用前自动注入日期信息到 prompt"
+    handler_description: str = "在 LLM 调用前自动注入完整的日期信息到 prompt"
     weight: int = 10
     intercept_message: bool = True
     
@@ -760,29 +893,23 @@ class DateInjectEventHandler(BaseEventHandler):
             if not hasattr(message, "llm_prompt") or not message.llm_prompt:
                 return True, True, "无 LLM prompt", None, None
             
-            # 获取日期信息
-            date_info = await get_three_days_info()
+            # 构建完整的注入内容
+            inject_content = await build_injection_content()
             
-            # 构建注入内容（优化格式，确保换行清晰）
-            inject_content = (
-                "\n\n"
-                "【日期信息】\n"
-                f"{date_info}\n"
-                "\n"
-                "提示：以上是当前日期信息，你可以根据需要在回复中自然地提及相关日期。"
-            )
-            
-            # 修改 prompt
+            # 修改 prompt（注入到末尾）
             message.modify_llm_prompt(
-                message.llm_prompt + inject_content,
+                message.llm_prompt + "\n" + inject_content,
                 suppress_warning=True
             )
             
-            logger.debug(f"[DatePerception] 已注入日期信息")
+            # 记录注入的内容（用于调试）
+            logger.info(f"[DatePerception] 已注入日期信息到 LLM prompt")
+            logger.debug(f"[DatePerception] 注入内容:\n{inject_content}")
             
             return True, True, "日期信息已注入", None, message
         except Exception as e:
             logger.error(f"[DatePerception] 日期注入失败: {e}")
+            logger.exception(f"[DatePerception] 异常详情: {e}")
             # 注入失败不阻止消息处理
             return True, False, f"注入失败: {str(e)}", None, message
 
@@ -790,7 +917,17 @@ class DateInjectEventHandler(BaseEventHandler):
 # ==================== Command 组件 ====================
 
 class DateCommand(BaseCommand):
-    """日期查询命令"""
+    """日期查询命令
+    
+    用户可以使用 /date 命令手动查询日期信息。
+    输出内容基于自动注入的内容，但移除了提示信息，更简洁易读。
+    
+    支持 LLM 扩展模式：
+    - enable_llm_expand = false（默认）：输出结构化日期信息（简洁版）
+    - enable_llm_expand = true：使用 LLM 将日期信息转换为自然语言
+    
+    注意：LLM 扩展仅对此命令有效，不影响自动注入和 Tool 工具。
+    """
     
     command_name: str = "date_query"
     command_description: str = "查询昨天、今天、明天的日期信息"
@@ -804,8 +941,28 @@ class DateCommand(BaseCommand):
             (success, description, block_further_processing)
         """
         try:
-            # 获取三天日期信息
-            date_info = await get_three_days_info()
+            # 使用和注入相同的内容构建函数
+            date_info = await build_injection_content()
+            
+            # 移除最后的提示信息（提示信息只在注入时需要，用户查询时不需要）
+            lines = date_info.split('\n')
+            # 移除空行和提示行
+            filtered_lines = []
+            skip_next = False
+            for line in lines:
+                if line.startswith("提示:"):
+                    skip_next = True
+                    continue
+                if skip_next and line.strip() == "":
+                    skip_next = False
+                    continue
+                filtered_lines.append(line)
+            
+            # 移除末尾的空行
+            while filtered_lines and filtered_lines[-1].strip() == "":
+                filtered_lines.pop()
+            
+            date_info = '\n'.join(filtered_lines)
             
             # 检查是否启用 LLM 扩展
             enable_llm_expand = self.get_config("llm.enable_llm_expand", False)
@@ -899,8 +1056,8 @@ class QuickDatePerceptionPlugin(BasePlugin):
             ),
             "enable_tool": ConfigField(
                 type=bool,
-                default=True,
-                description="是否启用 Tool 工具接口"
+                default=False,
+                description="是否启用 Tool 工具接口（LLM 可主动调用查询日期，不推荐开启）"
             ),
             "enable_command": ConfigField(
                 type=bool,
@@ -912,12 +1069,12 @@ class QuickDatePerceptionPlugin(BasePlugin):
             "enable_llm_expand": ConfigField(
                 type=bool,
                 default=False,
-                description="是否使用 LLM 将日期信息转换为自然语言"
+                description="是否使用 LLM 将 /date 命令的输出转换为自然语言（仅对 /date 命令有效，不影响自动注入和 Tool 工具）"
             ),
             "llm_model": ConfigField(
                 type=str,
                 default="replyer",
-                description="使用的 LLM 模型名称"
+                description="LLM 模型名称（用于 /date 命令的自然语言扩展）"
             ),
         },
     }
@@ -926,7 +1083,7 @@ class QuickDatePerceptionPlugin(BasePlugin):
         "plugin": "插件基本信息",
         "perception": "感知功能配置",
         "components": "组件开关",
-        "llm": "LLM 扩展配置",
+        "llm": "LLM 扩展配置（仅对 /date 命令有效）",
     }
     
     # ==================== 组件注册 ====================
