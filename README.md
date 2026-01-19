@@ -8,6 +8,56 @@
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Author](https://img.shields.io/badge/author-sansenjian-purple.svg)](https://github.com/sansenjian)
 
+## 📊 开发进度
+
+### 核心功能
+
+| 功能模块 | 状态 | 说明 |
+|---------|------|------|
+| 🕐 时区感知 | ✅ 完成 | 支持所有 IANA 时区配置 |
+| 📅 日期识别 | ✅ 完成 | 星期、时间段自动识别 |
+| 🎉 节假日检测 | ✅ 完成 | 多数据源降级策略 |
+| 🌙 农历转换 | ✅ 完成 | 天干地支、生肖、农历月日 |
+| 🌸 节气计算 | ✅ 完成 | 二十四节气识别 |
+
+### 组件功能
+
+| 组件 | 状态 | 说明 |
+|------|------|------|
+| 🤖 EventHandler（自动注入） | ✅ 完成 | 自动注入日期信息到 LLM Prompt |
+| 🔧 Tool（工具接口） | ⚠️ 未测试效果 | LLM 可主动调用查询日期 |
+| 💬 Command（命令查询） | ✅ 完成 | `/date` 命令手动查询 |
+| 🎨 LLM 扩展 | ✅ 完成 | 自然语言输出（仅 Command） |
+
+### 技术特性
+
+| 特性 | 状态 | 说明 |
+|------|------|------|
+| 🔄 降级测试 | ✅ 完成 | 依赖库缺失时自动降级 |
+| ⚙️ 灵活配置 | ✅ 完成 | 完整的配置系统 |
+| 📝 日志记录 | ✅ 完成 | 统一的日志前缀和级别 |
+| ⚡ 异步处理 | ✅ 完成 | 全异步实现 |
+| 🧪 测试覆盖 | ✅ 完成 | 完整的测试套件 |
+
+### 待优化项
+
+| 项目 | 优先级 | 说明 |
+|------|--------|------|
+| 📝 README 整理 | 🟡 中 | 文档结构优化和内容完善 |
+| ⚡ 性能优化 | 🔵 低 | 缓存优化、减少重复计算 |
+| 🌐 国际化支持 | 🔵 低 | 支持其他国家的节假日 |
+| 📊 统计功能 | 🔵 低 | 使用频率统计 |
+
+**图例**：
+- ✅ 完成 - 功能已实现并测试
+- ⚠️ 未测试效果 - 功能已实现但未充分测试
+- 🚧 进行中 - 正在开发
+- 📋 计划中 - 已列入开发计划
+- 🟡 中优先级 - 建议优化
+- 🔵 低优先级 - 可选优化项
+
+---
+
 ## ✨ 特性
 
 - 🕐 **时区感知** - 支持配置时区，准确获取当前时间
@@ -111,7 +161,7 @@ pip install chinese-calendar lunarcalendar aiohttp
 插件安装后即可使用，默认配置：
 - ✅ 自动注入日期信息到 LLM Prompt
 - ✅ 提供 `/date` 命令查询日期
-- ✅ 提供 `get_date_info` 工具供 LLM 调用
+- ❌ Tool 工具默认关闭（需要时可手动启用）
 - ✅ 启用节假日、农历、节气感知
 
 ### 工作原理
@@ -140,21 +190,30 @@ LLM 处理（带日期上下文）
 
 **麦麦**（收到的 Prompt 包含）：
 ```
-【日期】
-昨天 | 1月1日 星期一【元旦】
-今天 | 1月2日 星期二
-明天 | 1月3日 星期三
+【当前日期时间】
+时间: 2025-01-20 14:30:00 (星期一, 下午)
 
-提示：以上是当前日期信息，可以根据需要融入回复中。
+【三天日期】
+昨天: 1月19日 星期日 (周末)
+今天: 1月20日 星期一 (工作日) | 农历甲辰年(龙年)腊月廿一
+明天: 1月21日 星期二 (工作日)
+
+提示: 以上是完整的日期信息，如果可直接用于回答用户关于日期、星期、节假日、农历、节气的问题，就无需调用搜索工具。
 
 用户消息：今天天气怎么样？
 ```
 
-**麦麦**：今天是1月2日星期二，天气...
+**麦麦**：今天是1月20日星期一，天气...
 
-### 2. Tool 工具模式
+### 2. Tool 工具模式（可选）
 
 启用 `enable_tool = true` 后，LLM 可以主动调用 `get_date_info` 工具查询日期：
+
+**配置**：
+```toml
+[components]
+enable_tool = true  # 启用 Tool 工具（默认关闭）
+```
 
 **用户**：明天是什么日子？
 
@@ -170,27 +229,67 @@ LLM 处理（带日期上下文）
 
 **麦麦**：明天是1月3日星期三。
 
+**说明**：
+- ⚠️ Tool 工具默认关闭，因为自动注入已经提供了日期信息
+- ✅ 如果 LLM 需要主动查询日期，可以启用此功能
+- ✅ 适合需要 LLM 按需获取日期信息的场景
+
 ### 3. Command 命令模式
 
 启用 `enable_command = true` 后，用户可以使用 `/date` 命令手动查询：
 
 **用户**：`/date`
 
-**麦麦**：
+**麦麦**（默认输出）：
 ```
-昨天 | 1月1日 星期一【元旦】
-今天 | 1月2日 星期二
-明天 | 1月3日 星期三
+【当前日期时间】
+时间: 2025-01-20 14:30:00 (星期一, 下午)
+
+【三天日期】
+昨天: 1月19日 星期日 (周末)
+今天: 1月20日 星期一 (工作日)
+明天: 1月21日 星期二 (工作日)
 ```
 
-如果启用了 `enable_llm_expand = true`，输出会更自然：
+**说明**：`/date` 命令的输出内容基于自动注入的内容，但移除了提示信息，更简洁易读。
 
-**麦麦**：
+#### 🤖 LLM 扩展模式（仅对 Command 有效）
+
+**重要说明**：LLM 扩展功能**仅对 `/date` 命令有效**，不影响自动注入和 Tool 工具。
+
+启用 `enable_llm_expand = true` 后，`/date` 命令的输出会更自然：
+
+**配置**：
+```toml
+[llm]
+enable_llm_expand = true    # 启用 LLM 扩展
+llm_model = "replyer"        # LLM 模型名称
 ```
-昨天是1月1日星期一，元旦假期。
-今天是1月2日星期二，正常工作日。
-明天是1月3日星期三，也是工作日。
+
+**用户**：`/date`
+
+**麦麦**（LLM 扩展输出）：
 ```
+现在是2025年1月20日星期一下午2点30分。
+
+昨天是1月19日星期日，周末休息日。
+今天是1月20日星期一，正常工作日。
+明天是1月21日星期二，也是工作日。
+```
+
+**效果对比**：
+
+| 模式 | 输出风格 | 响应速度 | 适用场景 |
+|------|---------|---------|---------|
+| **默认模式** | 结构化信息（简洁版） | 快速 | 快速查看日期 |
+| **LLM 扩展** | 自然语言 | 较慢（需调用 LLM） | 需要更友好的输出 |
+
+**注意事项**：
+- ⚠️ 启用 LLM 扩展会增加响应时间（需要额外的 LLM 调用）
+- ⚠️ 会增加 API 调用次数和成本
+- ✅ 建议仅在需要更自然输出时启用
+- ✅ 自动注入和 Tool 工具不受此配置影响
+- ✅ 默认模式输出简洁，不包含提示信息
 
 ## ⚙️ 配置详解
 
@@ -215,7 +314,7 @@ enable_solar_term = true     # 启用节气感知
 [components]
 # 组件开关
 enable_event_handler = true  # 启用自动注入（推荐）
-enable_tool = true           # 启用 Tool 工具
+enable_tool = false          # 启用 Tool 工具（默认关闭）
 enable_command = true        # 启用 /date 命令
 
 [llm]
@@ -255,22 +354,34 @@ llm_model = "replyer"        # LLM 模型名称
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `enable_event_handler` | bool | `true` | 启用自动注入（推荐开启） |
-| `enable_tool` | bool | `true` | 启用 Tool 工具接口 |
+| `enable_tool` | bool | `false` | 启用 Tool 工具接口（LLM 可主动调用查询日期） |
 | `enable_command` | bool | `true` | 启用 `/date` 命令 |
 
 **推荐配置**：
-- 日常使用：全部启用
+- 日常使用：启用 `enable_event_handler` 和 `enable_command`（默认配置）
+- 需要 LLM 主动查询：额外启用 `enable_tool`
 - 仅自动注入：只启用 `enable_event_handler`
 - 仅手动查询：只启用 `enable_command`
 
-#### [llm] LLM 扩展配置
+**Tool 工具说明**：
+- ⚠️ 默认关闭，因为自动注入已经提供了日期信息
+- ✅ 如果需要 LLM 按需主动查询日期，可以启用
+- ✅ 适合需要动态获取日期信息的场景
+
+#### [llm] LLM 扩展配置（仅对 `/date` 命令有效）
+
+**重要**：此配置**仅影响 `/date` 命令的输出**，不影响自动注入和 Tool 工具。
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `enable_llm_expand` | bool | `false` | 是否使用 LLM 转换日期信息为自然语言 |
+| `enable_llm_expand` | bool | `false` | 是否使用 LLM 将 `/date` 命令的输出转换为自然语言 |
 | `llm_model` | str | `"replyer"` | 使用的 LLM 模型名称 |
 
-**注意**：启用 LLM 扩展会增加响应时间和 API 调用次数，建议仅在需要更自然的输出时启用。
+**使用场景**：
+- ✅ 需要 `/date` 命令输出更友好的自然语言
+- ❌ 不需要时建议关闭（节省响应时间和 API 调用）
+
+**注意**：启用后会增加 `/date` 命令的响应时间和 API 调用次数。
 
 ### 常见配置组合
 
@@ -283,15 +394,24 @@ enable_lunar = true
 enable_solar_term = true
 
 [components]
-enable_event_handler = true
-enable_tool = true
-enable_command = true
+enable_event_handler = true  # 自动注入
+enable_tool = false          # Tool 工具（按需启用）
+enable_command = true        # /date 命令
 
 [llm]
 enable_llm_expand = false
 ```
 
-#### 配置 2：仅基础功能
+#### 配置 2：启用 Tool 工具
+
+```toml
+[components]
+enable_event_handler = true  # 自动注入
+enable_tool = true           # 启用 Tool 工具
+enable_command = true        # /date 命令
+```
+
+#### 配置 3：仅基础功能
 
 ```toml
 [perception]
@@ -305,15 +425,18 @@ enable_tool = false
 enable_command = true
 ```
 
-#### 配置 3：自然语言输出
+#### 配置 4：Command 命令自然语言输出
 
 ```toml
+[components]
+enable_command = true        # 启用 /date 命令
+
 [llm]
-enable_llm_expand = true
+enable_llm_expand = true     # 启用 LLM 扩展（仅对 /date 命令有效）
 llm_model = "replyer"
 ```
 
-#### 配置 4：禁用插件
+#### 配置 5：禁用插件
 
 ```toml
 [plugin]
@@ -495,30 +618,38 @@ enabled = false
 
 **说明：** 这是正常现象。自动注入只是将日期信息添加到 Prompt 中，LLM 是否使用取决于其自身判断。
 
-**如果想强制使用日期信息：**
+**如果想要更友好的日期输出：**
 
-1. 调整 LLM 的 system prompt
-2. 使用 `/date` 命令手动查询
-3. 启用 `enable_llm_expand` 获得更自然的输出
+1. 使用 `/date` 命令并启用 `enable_llm_expand`
+2. 调整 LLM 的 system prompt 让其更好地利用注入的日期信息
 
 ### 问题 5：LLM 扩展不生效
 
-**症状：** 启用 `enable_llm_expand` 后输出仍是原始格式
+**症状：** 启用 `enable_llm_expand` 后 `/date` 命令输出仍是原始格式
+
+**说明：** LLM 扩展**仅对 `/date` 命令有效**，不影响自动注入和 Tool 工具。
 
 **排查步骤：**
 
-1. **检查配置**
+1. **确认使用的是 `/date` 命令**
+   
+   LLM 扩展只对 `/date` 命令生效，不影响其他功能
+
+2. **检查配置**
    ```toml
+   [components]
+   enable_command = true       # 确保命令已启用
+   
    [llm]
    enable_llm_expand = true
-   llm_model = "replyer"  # 确保模型名称正确
+   llm_model = "replyer"       # 确保模型名称正确
    ```
 
-2. **检查 LLM 是否可用**
+3. **检查 LLM 是否可用**
    
    查看日志中是否有 LLM 调用失败的错误
 
-3. **检查 LLM 配置**
+4. **检查 LLM 配置**
    
    确保 `model_config.toml` 中配置了对应的模型
 
@@ -568,7 +699,7 @@ enabled = false
 | `警告: xxx` | 非致命错误，插件会降级处理 |
 | `错误: xxx` | 严重错误，可能影响功能 |
 
-## � 贡献
+## 🤝 贡献
 
 欢迎贡献代码、报告问题或提出建议！
 

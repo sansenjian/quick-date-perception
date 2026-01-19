@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "description": "轻量级日期感知插件，为麦麦提供时间、日期、节假日、农历、节气等环境感知能力。支持多数据源降级策略，在依赖库缺失时优雅降级。",
   "author": {
-    "name": "MaiBot Team"
+    "name": "sansenjian",
+    "url": "https://github.com/sansenjian"
   },
   "license": "MIT",
   "host_application": {

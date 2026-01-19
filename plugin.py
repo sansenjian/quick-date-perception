@@ -673,6 +673,9 @@ async def expand_with_llm(raw_info: str, llm_model: str = "replyer") -> str:
     """
     使用 LLM 将原始日期信息扩展为自然语言
     
+    注意：此函数仅在 DateCommand (/date 命令) 中使用，
+    不影响 DateTool 和 DateInjectEventHandler 的行为。
+    
     Args:
         raw_info: 原始格式化的日期信息
         llm_model: LLM 模型名称
@@ -841,7 +844,7 @@ async def build_injection_content() -> str:
         
         # 4. 简洁提示
         lines.append("")
-        lines.append("提示: 以上是完整的日期信息，可直接用于回答用户关于日期、星期、节假日、农历、节气的问题，无需调用搜索工具。")
+        lines.append("提示: 以上是完整的日期信息，如果可以用于回答用户关于日期、星期、节假日、农历、节气的问题，就无需调用工具搜索日期。")
         lines.append("")
         
         return "\n".join(lines)
@@ -914,7 +917,17 @@ class DateInjectEventHandler(BaseEventHandler):
 # ==================== Command 组件 ====================
 
 class DateCommand(BaseCommand):
-    """日期查询命令"""
+    """日期查询命令
+    
+    用户可以使用 /date 命令手动查询日期信息。
+    输出内容基于自动注入的内容，但移除了提示信息，更简洁易读。
+    
+    支持 LLM 扩展模式：
+    - enable_llm_expand = false（默认）：输出结构化日期信息（简洁版）
+    - enable_llm_expand = true：使用 LLM 将日期信息转换为自然语言
+    
+    注意：LLM 扩展仅对此命令有效，不影响自动注入和 Tool 工具。
+    """
     
     command_name: str = "date_query"
     command_description: str = "查询昨天、今天、明天的日期信息"
@@ -928,8 +941,28 @@ class DateCommand(BaseCommand):
             (success, description, block_further_processing)
         """
         try:
-            # 获取三天日期信息
-            date_info = await get_three_days_info()
+            # 使用和注入相同的内容构建函数
+            date_info = await build_injection_content()
+            
+            # 移除最后的提示信息（提示信息只在注入时需要，用户查询时不需要）
+            lines = date_info.split('\n')
+            # 移除空行和提示行
+            filtered_lines = []
+            skip_next = False
+            for line in lines:
+                if line.startswith("提示:"):
+                    skip_next = True
+                    continue
+                if skip_next and line.strip() == "":
+                    skip_next = False
+                    continue
+                filtered_lines.append(line)
+            
+            # 移除末尾的空行
+            while filtered_lines and filtered_lines[-1].strip() == "":
+                filtered_lines.pop()
+            
+            date_info = '\n'.join(filtered_lines)
             
             # 检查是否启用 LLM 扩展
             enable_llm_expand = self.get_config("llm.enable_llm_expand", False)
@@ -1023,8 +1056,8 @@ class QuickDatePerceptionPlugin(BasePlugin):
             ),
             "enable_tool": ConfigField(
                 type=bool,
-                default=True,
-                description="是否启用 Tool 工具接口"
+                default=False,
+                description="是否启用 Tool 工具接口（LLM 可主动调用查询日期，不推荐开启）"
             ),
             "enable_command": ConfigField(
                 type=bool,
@@ -1036,12 +1069,12 @@ class QuickDatePerceptionPlugin(BasePlugin):
             "enable_llm_expand": ConfigField(
                 type=bool,
                 default=False,
-                description="是否使用 LLM 将日期信息转换为自然语言"
+                description="是否使用 LLM 将 /date 命令的输出转换为自然语言（仅对 /date 命令有效，不影响自动注入和 Tool 工具）"
             ),
             "llm_model": ConfigField(
                 type=str,
                 default="replyer",
-                description="使用的 LLM 模型名称"
+                description="LLM 模型名称（用于 /date 命令的自然语言扩展）"
             ),
         },
     }
@@ -1050,7 +1083,7 @@ class QuickDatePerceptionPlugin(BasePlugin):
         "plugin": "插件基本信息",
         "perception": "感知功能配置",
         "components": "组件开关",
-        "llm": "LLM 扩展配置",
+        "llm": "LLM 扩展配置（仅对 /date 命令有效）",
     }
     
     # ==================== 组件注册 ====================
