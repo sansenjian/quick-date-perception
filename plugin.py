@@ -451,7 +451,8 @@ def get_solar_term_info(current_time: datetime) -> str:
         current_time: 当前时间
         
     Returns:
-        节气信息，如 "今日立春"、"临近春分"、"当前节气: 清明"
+        节气信息，如 "立春"、"大寒"
+        只在节气当天显示，其他日期返回空字符串
         lunarcalendar 不可用或失败时返回空字符串
     """
     if not LUNARCALENDAR_AVAILABLE:
@@ -462,32 +463,45 @@ def get_solar_term_info(current_time: datetime) -> str:
         year = current_time.year
         current_date = current_time.date()
         
-        # 查找最近的节气
-        closest_term = None
-        closest_days = 999
+        # 节气类名映射（lunarcalendar 使用拼音类名）
+        solar_term_classes = {
+            "小寒": solarterm.XiaoHan,
+            "大寒": solarterm.DaHan,
+            "立春": solarterm.LiChun,
+            "雨水": solarterm.YuShui,
+            "惊蛰": solarterm.JingZhe,
+            "春分": solarterm.ChunFen,
+            "清明": solarterm.QingMing,
+            "谷雨": solarterm.GuYu,
+            "立夏": solarterm.LiXia,
+            "小满": solarterm.XiaoMan,
+            "芒种": solarterm.MangZhong,
+            "夏至": solarterm.XiaZhi,
+            "小暑": solarterm.XiaoShu,
+            "大暑": solarterm.DaShu,
+            "立秋": solarterm.LiQiu,
+            "处暑": solarterm.ChuShu,
+            "白露": solarterm.BaiLu,
+            "秋分": solarterm.QiuFen,
+            "寒露": solarterm.HanLu,
+            "霜降": solarterm.ShuangJiang,
+            "立冬": solarterm.LiDong,
+            "小雪": solarterm.XiaoXue,
+            "大雪": solarterm.DaXue,
+            "冬至": solarterm.DongZhi,
+        }
         
-        for term_name in SOLAR_TERMS:
+        # 查找是否有节气在今天
+        for term_name, term_class in solar_term_classes.items():
             # 获取节气日期
-            term_date = solarterm.get_solar_term_date(year, term_name)
-            if term_date:
-                days_diff = (term_date - current_date).days
-                
-                if abs(days_diff) < abs(closest_days):
-                    closest_days = days_diff
-                    closest_term = term_name
+            term_date = term_class(year)
+            
+            # 只在节气当天显示
+            if term_date == current_date:
+                return term_name
         
-        if not closest_term:
-            return ""
-        
-        # 根据距离返回不同格式
-        if closest_days == 0:
-            return f"今日{closest_term}"
-        elif 0 < closest_days <= 2:
-            return f"临近{closest_term}"
-        elif -2 <= closest_days < 0:
-            return f"{closest_term}已过"
-        else:
-            return f"当前节气: {closest_term}"
+        # 如果今天不是节气，返回空字符串
+        return ""
     except Exception as e:
         logger.debug(f"[DatePerception] 节气计算失败: {e}")
         return ""
@@ -760,25 +774,20 @@ async def build_injection_content() -> str:
     try:
         now = datetime.now()
         
-        # 1. 构建标题和当前时间
-        current_time_str = now.strftime("%Y年%m月%d日 %H:%M:%S")
+        # 1. 当前时间信息（简洁格式）
+        current_time_str = now.strftime("%Y-%m-%d %H:%M:%S")
         time_period = classify_time_period(now.hour)
         weekday = get_weekday_cn(now)
         
         lines = [
-            "=" * 50,
-            "📅 当前日期时间信息",
-            "=" * 50,
             "",
-            f"⏰ 当前时间: {current_time_str}",
-            f"📆 星期: {weekday}",
-            f"🕐 时段: {time_period}",
+            "【当前日期时间】",
+            f"时间: {current_time_str} ({weekday}, {time_period})",
             ""
         ]
         
-        # 2. 三天日期信息
-        lines.append("📋 三天日期概览:")
-        lines.append("-" * 50)
+        # 2. 三天日期信息（包含每天的农历和节气）
+        lines.append("【三天日期】")
         
         # 获取三天基础信息
         raw_info = get_three_days_raw_info()
@@ -790,68 +799,52 @@ async def build_injection_content() -> str:
         today_holiday = await detect_holiday(now)
         tomorrow_holiday = await detect_holiday(tomorrow)
         
-        # 格式化三天信息
+        # 获取每天的农历和节气信息
+        yesterday_lunar = get_lunar_info(yesterday)
+        today_lunar = get_lunar_info(now)
+        tomorrow_lunar = get_lunar_info(tomorrow)
+        
+        yesterday_solar_term = get_solar_term_info(yesterday)
+        today_solar_term = get_solar_term_info(now)
+        tomorrow_solar_term = get_solar_term_info(tomorrow)
+        
+        # 格式化三天信息（每天一行，包含农历和节气）
         yesterday_info = raw_info["yesterday"]
-        yesterday_line = f"  昨天: {yesterday_info['date_short']} {yesterday_info['weekday']}"
+        yesterday_line = f"昨天: {yesterday_info['date_short']} {yesterday_info['weekday']}"
         if yesterday_holiday and yesterday_holiday != "工作日":
-            yesterday_line += f" 【{yesterday_holiday}】"
+            yesterday_line += f" ({yesterday_holiday})"
+        if yesterday_lunar:
+            yesterday_line += f" | {yesterday_lunar}"
+        if yesterday_solar_term:
+            yesterday_line += f" | {yesterday_solar_term}"
         lines.append(yesterday_line)
         
         today_info = raw_info["today"]
-        today_line = f"  今天: {today_info['date_short']} {today_info['weekday']}"
+        today_line = f"今天: {today_info['date_short']} {today_info['weekday']}"
         if today_holiday and today_holiday != "工作日":
-            today_line += f" 【{today_holiday}】"
+            today_line += f" ({today_holiday})"
+        if today_lunar:
+            today_line += f" | {today_lunar}"
+        if today_solar_term:
+            today_line += f" | {today_solar_term}"
         lines.append(today_line)
         
         tomorrow_info = raw_info["tomorrow"]
-        tomorrow_line = f"  明天: {tomorrow_info['date_short']} {tomorrow_info['weekday']}"
+        tomorrow_line = f"明天: {tomorrow_info['date_short']} {tomorrow_info['weekday']}"
         if tomorrow_holiday and tomorrow_holiday != "工作日":
-            tomorrow_line += f" 【{tomorrow_holiday}】"
+            tomorrow_line += f" ({tomorrow_holiday})"
+        if tomorrow_lunar:
+            tomorrow_line += f" | {tomorrow_lunar}"
+        if tomorrow_solar_term:
+            tomorrow_line += f" | {tomorrow_solar_term}"
         lines.append(tomorrow_line)
         
+        # 4. 简洁提示
+        lines.append("")
+        lines.append("提示: 以上是完整的日期信息，可直接用于回答用户关于日期、星期、节假日、农历、节气的问题，无需调用搜索工具。")
         lines.append("")
         
-        # 3. 农历信息
-        lunar_info = get_lunar_info(now)
-        if lunar_info:
-            lines.append("🏮 农历信息:")
-            lines.append("-" * 50)
-            lines.append(f"  {lunar_info}")
-            lines.append("")
-        
-        # 4. 节气信息
-        solar_term_info = get_solar_term_info(now)
-        if solar_term_info:
-            lines.append("🌸 节气信息:")
-            lines.append("-" * 50)
-            lines.append(f"  {solar_term_info}")
-            lines.append("")
-        
-        # 5. 智能提示
-        lines.append("💡 提示:")
-        lines.append("-" * 50)
-        
-        hints = []
-        
-        # 根据实际包含的信息生成提示
-        if lunar_info and solar_term_info:
-            hints.append("  • 以上包含公历、农历、节气等完整日期信息")
-        elif lunar_info:
-            hints.append("  • 以上包含公历和农历日期信息")
-        elif solar_term_info:
-            hints.append("  • 以上包含公历和节气信息")
-        else:
-            hints.append("  • 以上包含公历日期信息")
-        
-        hints.append("  • 你可以根据用户问题自然地引用这些信息")
-        hints.append("  • 如果用户询问日期、星期、节假日、农历、节气等，直接使用以上信息回答")
-        hints.append("  • 不需要调用搜索工具查询日期相关信息")
-        
-        lines.extend(hints)
-        lines.append("")
-        lines.append("=" * 50)
-        
-        return "\n" + "\n".join(lines) + "\n"
+        return "\n".join(lines)
     except Exception as e:
         logger.error(f"[DatePerception] 构建注入内容失败: {e}")
         # 降级方案：返回简单的日期信息
