@@ -1,0 +1,48 @@
+{
+  "manifest_version": 1,
+  "name": "快速日期感知",
+  "version": "1.0.0",
+  "description": "轻量级日期感知插件，为麦麦提供时间、日期、节假日、农历、节气等环境感知能力。支持多数据源降级策略，在依赖库缺失时优雅降级。",
+  "author": {
+    "name": "MaiBot Team"
+  },
+  "license": "MIT",
+  "host_application": {
+    "min_version": "0.7.0"
+  },
+  "categories": ["Utility Tools"],
+  "keywords": ["日期", "时间", "节假日", "农历", "节气", "感知", "date", "time", "holiday", "lunar", "solar-term"],
+  "python_dependencies": [
+    {
+      "package_name": "chinese-calendar",
+      "version": ">=1.8.0",
+      "optional": true,
+      "description": "节假日判断库（可选，不安装时将使用备用方案）"
+    },
+    {
+      "package_name": "lunarcalendar",
+      "version": ">=0.0.9",
+      "optional": true,
+      "description": "农历和节气计算库（可选，不安装时将跳过农历和节气功能）"
+    },
+    {
+      "package_name": "aiohttp",
+      "version": ">=3.8.0",
+      "optional": true,
+      "description": "异步HTTP客户端，用于下载节假日数据（可选，不安装时将使用内置固定节日）"
+    }
+  ],
+  "features": [
+    "时区感知的日期时间获取",
+    "星期和时间段识别（上午/中午/下午/晚上/深夜）",
+    "节假日和调休识别（多数据源降级策略）",
+    "农历日期转换（天干地支、生肖、农历月日）",
+    "二十四节气计算",
+    "LLM Prompt 自动注入日期信息",
+    "Tool 工具接口供 LLM 主动查询",
+    "Command 命令接口供用户手动查询",
+    "可选 LLM 扩展将日期信息转换为自然语言",
+    "依赖库缺失时优雅降级"
+  ],
+  "default_locale": "zh-CN"
+}
