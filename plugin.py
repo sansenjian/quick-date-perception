@@ -534,10 +534,12 @@ async def get_three_days_info() -> str:
     获取三天完整信息，格式化为字符串
     
     Returns:
-        格式化的三天日期信息，每行格式：
+        格式化的三天日期信息，包含农历和节气，格式：
         "昨天 | 1月1日 星期一【元旦】"
         "今天 | 1月2日 星期二"
         "明天 | 1月3日 星期三"
+        "农历甲辰年(龙年)正月初一"
+        "今日立春"
     """
     try:
         # 获取基础信息
@@ -575,6 +577,16 @@ async def get_three_days_info() -> str:
         if tomorrow_holiday and tomorrow_holiday != "工作日":
             tomorrow_line += f"【{tomorrow_holiday}】"
         lines.append(tomorrow_line)
+        
+        # 添加农历信息
+        lunar_info = get_lunar_info(now)
+        if lunar_info:
+            lines.append(lunar_info)
+        
+        # 添加节气信息
+        solar_term_info = get_solar_term_info(now)
+        if solar_term_info:
+            lines.append(solar_term_info)
         
         return "\n".join(lines)
     except Exception as e:
@@ -700,7 +712,7 @@ class DateTool(BaseTool):
     """日期查询工具"""
     
     name: str = "get_date_info"
-    description: str = "获取昨天、今天、明天的日期、星期几和节假日信息"
+    description: str = "获取当前日期、星期、节假日、农历、节气等完整信息。包括昨天、今天、明天的详细日期信息，支持中国节假日识别、农历转换、二十四节气计算。适用于查询日期、星期几、是否节假日、农历日期、节气等问题。"
     available_for_llm: bool = True
     parameters: List = []  # 不需要参数
     
